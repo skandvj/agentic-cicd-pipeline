@@ -1,0 +1,75 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "table" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        { "expr": "sum(rate(agent_invocation_total[1m])) by (agent_id)", "legendFormat": "{{agent_id}}" }
+      ],
+      "title": "Requests per minute",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(agent_latency_seconds_bucket[5m])) by (le, agent_id))", "legendFormat": "p95 {{agent_id}}" }
+      ],
+      "title": "Latency distribution",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 7 },
+      "id": 3,
+      "targets": [
+        { "expr": "sum(agent_cost_cents) by (agent_id, model)", "legendFormat": "{{agent_id}} / {{model}}" }
+      ],
+      "title": "Cost accumulation",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 7 },
+      "id": 4,
+      "targets": [
+        { "expr": "eval_score", "legendFormat": "{{agent_id}} {{suite}}" }
+      ],
+      "title": "Eval score trends",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 7 },
+      "id": 5,
+      "targets": [
+        { "expr": "sum(rate(agent_invocation_total{status!=\"ok\"}[5m])) by (agent_id)", "legendFormat": "{{agent_id}}" }
+      ],
+      "title": "Error rate",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["agents", "evals"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Agentic CI/CD Agents",
+  "uid": "agentic-cicd-agents",
+  "version": 1,
+  "weekStart": ""
+}

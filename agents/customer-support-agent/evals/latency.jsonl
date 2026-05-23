@@ -1,0 +1,10 @@
+{"id":"lat-001","input":"How do I reset my password?","expected_output":"fast password reset response","scorer":"latency","max_latency_ms":1000}
+{"id":"lat-002","input":"Where are invoices?","expected_output":"fast billing response","scorer":"latency","max_latency_ms":1000}
+{"id":"lat-003","input":"Urgent outage in workspace.","expected_output":"fast escalation","scorer":"latency","max_latency_ms":1000}
+{"id":"lat-004","input":"What details help troubleshooting?","expected_output":"fast troubleshooting","scorer":"latency","max_latency_ms":1000}
+{"id":"lat-005","input":"Customer cannot sign in.","expected_output":"fast customer lookup","scorer":"latency","max_latency_ms":1000}
+{"id":"lat-006","input":"Billing receipt missing.","expected_output":"fast billing","scorer":"latency","max_latency_ms":1000}
+{"id":"lat-007","input":"Reset email did not arrive.","expected_output":"fast reset","scorer":"latency","max_latency_ms":1000}
+{"id":"lat-008","input":"Production export broken.","expected_output":"fast ticket","scorer":"latency","max_latency_ms":1000}
+{"id":"lat-009","input":"Permissions issue on reports.","expected_output":"fast troubleshooting","scorer":"latency","max_latency_ms":1000}
+{"id":"lat-010","input":"Cannot complete onboarding setup.","expected_output":"fast escalation","scorer":"latency","max_latency_ms":1000}

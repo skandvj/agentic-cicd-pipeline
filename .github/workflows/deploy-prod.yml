@@ -1,0 +1,36 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_sha:
+        description: Staging-validated image SHA
+        required: false
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Pull staging-validated image
+        run: |
+          IMAGE_SHA="${{ inputs.image_sha || github.sha }}"
+          docker pull ghcr.io/${{ github.repository }}/runtime:${IMAGE_SHA}
+      - name: Deploy production
+        run: docker compose up -d runtime
+      - name: Smoke test
+        run: python scripts/smoke_test.py
+      - name: Update baseline metrics
+        run: python -m src.evals.cli run-evals --agent customer-support --suite all --output production-baseline.json
+      - name: Tag release
+        run: |
+          git tag "prod-${{ github.run_number }}"
+          git push origin "prod-${{ github.run_number }}"

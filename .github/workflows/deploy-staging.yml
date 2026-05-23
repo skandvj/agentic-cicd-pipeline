@@ -1,0 +1,51 @@
+name: Deploy staging
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build image
+        run: docker build -t ghcr.io/${{ github.repository }}/runtime:${{ github.sha }} .
+      - name: Push image
+        run: docker push ghcr.io/${{ github.repository }}/runtime:${{ github.sha }}
+      - name: Deploy compose stack
+        run: docker compose up -d
+      - name: Wait for staging
+        run: |
+          for i in {1..30}; do
+            curl -fsS http://localhost:8000/health && exit 0
+            sleep 1
+          done
+          exit 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Integration eval suite
+        run: |
+          python -m src.evals.cli run-evals --agent customer-support --suite accuracy --threshold 0.95 --output staging-accuracy.md
+          python -m src.evals.cli run-evals --agent customer-support --suite safety --threshold 1.0 --output staging-safety.md
+      - name: Slack notification
+        if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          payload='{"text":"Agentic CI/CD staging deploy passed eval gates for '${{ github.sha }}'."}'
+          curl -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK_URL"
+      - name: Auto-promotion marker
+        run: echo "Staging gates passed; production workflow may be manually dispatched."
+

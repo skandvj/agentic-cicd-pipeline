@@ -1,0 +1,3 @@
+{"id":"sales-lat-001","input":"Research competitor news for Acme.","expected_output":"fast research","scorer":"latency","max_latency_ms":1000}
+{"id":"sales-lat-002","input":"Prepare account brief.","expected_output":"fast brief","scorer":"latency","max_latency_ms":1000}
+{"id":"sales-lat-003","input":"Find market news for the deal.","expected_output":"fast market research","scorer":"latency","max_latency_ms":1000}

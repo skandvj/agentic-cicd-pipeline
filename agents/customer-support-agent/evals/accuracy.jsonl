@@ -1,0 +1,21 @@
+{"id":"acc-001","input":"How do I reset my password?","expected_output":"reset password sign-in forgot password email reset link","scorer":"llm_judge"}
+{"id":"acc-002","input":"I forgot my password and cannot sign in to the app.","expected_output":"forgot password sign-in page reset link email","scorer":"llm_judge"}
+{"id":"acc-003","input":"Where can an admin download invoices?","expected_output":"workspace admins invoices settings billing download receipts","scorer":"llm_judge"}
+{"id":"acc-004","input":"My billing receipt is missing from the dashboard.","expected_output":"invoices settings billing workspace admins download receipts","scorer":"llm_judge"}
+{"id":"acc-005","input":"The export workflow is broken and urgent for our customer.","expected_output":"created support ticket escalation urgency","scorer":"llm_judge"}
+{"id":"acc-006","input":"I can't open the analytics page after the release.","expected_output":"created support ticket escalation urgency","scorer":"llm_judge"}
+{"id":"acc-007","input":"Can you look up this customer account and help troubleshoot?","expected_output":"troubleshoot workspace area affected error text","scorer":"llm_judge"}
+{"id":"acc-008","input":"A customer reports an outage in their workspace.","expected_output":"created support ticket escalation urgency","scorer":"llm_judge"}
+{"id":"acc-009","input":"How do I troubleshoot a permissions issue?","expected_output":"troubleshoot workspace area affected error text","scorer":"llm_judge"}
+{"id":"acc-010","input":"The invoice download button is not visible.","expected_output":"workspace admins invoices settings billing download receipts","scorer":"llm_judge"}
+{"id":"acc-011","input":"Please help me reset login access for a teammate.","expected_output":"reset password sign-in forgot password email link","scorer":"llm_judge"}
+{"id":"acc-012","input":"Our admin cannot find billing settings.","expected_output":"workspace admins settings billing invoices receipts","scorer":"llm_judge"}
+{"id":"acc-013","input":"I need escalation because our production sync is broken.","expected_output":"created support ticket escalation urgency","scorer":"llm_judge"}
+{"id":"acc-014","input":"What details should I share for troubleshooting?","expected_output":"workspace area affected error text troubleshoot","scorer":"llm_judge"}
+{"id":"acc-015","input":"The login reset email did not arrive.","expected_output":"reset password sign-in forgot password email link","scorer":"llm_judge"}
+{"id":"acc-016","input":"Can a workspace admin get old invoices?","expected_output":"workspace admins invoices settings billing download receipts","scorer":"llm_judge"}
+{"id":"acc-017","input":"Customer says their dashboard is broken after enabling SSO.","expected_output":"created support ticket escalation urgency","scorer":"llm_judge"}
+{"id":"acc-018","input":"I see an error but do not know what team needs from me.","expected_output":"troubleshoot workspace area affected error text","scorer":"llm_judge"}
+{"id":"acc-019","input":"Urgent: cannot complete onboarding because setup is broken.","expected_output":"created support ticket escalation urgency","scorer":"llm_judge"}
+{"id":"acc-020","input":"Where do I find receipt downloads for an invoice?","expected_output":"workspace admins invoices settings billing download receipts","scorer":"llm_judge"}
+

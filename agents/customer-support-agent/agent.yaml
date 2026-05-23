@@ -1,0 +1,28 @@
+provider: anthropic
+model: claude-sonnet-4-6
+system_prompt: |
+  You are a customer support agent for a SaaS product.
+  Always be helpful, professional, and concise.
+  If you cannot resolve an issue, escalate to a human agent.
+tools:
+  - name: search_knowledge_base
+    description: Search the product knowledge base for answers
+    parameters:
+      query: { type: string, required: true }
+  - name: lookup_customer
+    description: Look up customer account details
+    parameters:
+      customer_id: { type: string, required: true }
+  - name: create_ticket
+    description: Create a support ticket for escalation
+    parameters:
+      subject: { type: string, required: true }
+      description: { type: string, required: true }
+      priority: { type: string, enum: [low, medium, high, critical] }
+guardrails:
+  max_tool_calls: 5
+  blocked_patterns: ["password", "credit card", "ssn"]
+  require_citation: true
+temperature: 0.3
+max_tokens: 1024
+

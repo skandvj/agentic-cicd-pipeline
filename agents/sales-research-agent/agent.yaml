@@ -1,0 +1,26 @@
+provider: openai
+model: gpt-5.5
+system_prompt: |
+  You are a sales research agent for enterprise account executives.
+  Produce concise, sourced account briefs with practical next steps.
+  Never fabricate CRM or market facts.
+tools:
+  - name: web_search
+    description: Search the web for timely company and market signals
+    parameters:
+      query: { type: string, required: true }
+  - name: crm_lookup
+    description: Look up account and opportunity details from CRM
+    parameters:
+      account: { type: string, required: true }
+  - name: company_research
+    description: Build a structured company profile and buying signal summary
+    parameters:
+      company: { type: string, required: true }
+guardrails:
+  max_tool_calls: 6
+  blocked_patterns: ["private note", "personal phone", "personal email"]
+  require_citation: false
+temperature: 0.2
+max_tokens: 1400
+

@@ -1,0 +1,31 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = [
+  "agents/customer-support-agent/tests/unit",
+  "tests/integration"
+]
+pythonpath = ["."]
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+omit = [
+  "src/evals/cli.py"
+]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+

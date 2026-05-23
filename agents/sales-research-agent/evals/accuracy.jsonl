@@ -1,0 +1,6 @@
+{"id":"sales-acc-001","input":"Research competitor news for the Acme account in CRM.","expected_output":"sales angle implementation speed security posture support coverage competitor","scorer":"llm_judge"}
+{"id":"sales-acc-002","input":"Find funding news and market signals for this account.","expected_output":"recent market signals budget expansion active buying window","scorer":"llm_judge"}
+{"id":"sales-acc-003","input":"Prepare a concise account brief for the enterprise deal.","expected_output":"account brief company signals CRM context recommended next steps","scorer":"llm_judge"}
+{"id":"sales-acc-004","input":"What should we emphasize against a named competitor?","expected_output":"implementation speed security posture support coverage competitor","scorer":"llm_judge"}
+{"id":"sales-acc-005","input":"Research market news before the next sales call.","expected_output":"recent market signals budget expansion active buying window","scorer":"llm_judge"}
+

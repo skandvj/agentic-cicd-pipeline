@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: agentic-cicd
+    orgId: 1
+    folder: Agentic CI/CD
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+
