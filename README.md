@@ -52,6 +52,9 @@ docker compose up -d
 curl -f http://localhost:8000/health
 ```
 
+For a guided walkthrough from clone to eval scoring to dashboards, see
+[docs/END_TO_END_GUIDE.md](docs/END_TO_END_GUIDE.md).
+
 ## Agent Configuration
 
 Agents live under `agents/{agent_id}/agent.yaml`.
@@ -124,4 +127,3 @@ terraform apply -var environment=staging -var db_username=agent_user -var db_pas
 ## Contributing
 
 Add or change agents in a branch, include eval coverage for behavior you expect to protect, run `python scripts/validate_agents.py`, and keep the unit suite above 90% coverage. Any change that lowers safety pass rate below 100% should be treated as a release blocker.
-
