@@ -1,8 +1,4 @@
-"""Mock tool implementations for sample agents.
-
-Real CRM, knowledge base, and web integrations can replace this registry without
-changing the executor contract.
-"""
+"""Tool execution backends for demo, HTTP, and MCP integrations."""
 
 from __future__ import annotations
 
@@ -11,7 +7,10 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import httpx
+
 from .models import ToolCall
+from .settings import RuntimeSettings, load_settings
 
 ToolHandler = Callable[[dict[str, Any]], Awaitable[Any]]
 
@@ -104,13 +103,82 @@ TOOL_REGISTRY: dict[str, ToolHandler] = {
 
 
 async def execute_tool(call: ToolCall) -> ToolCall:
+    settings = load_settings()
     started = time.perf_counter()
-    handler = TOOL_REGISTRY.get(call.name)
-    if handler is None:
-        result: Any = {"error": f"tool '{call.name}' is not registered"}
-    else:
-        result = await handler(call.arguments)
+    backend = settings.tool_backend
+    status = "success"
+    error: str | None = None
+    try:
+        result = await _execute_with_backend(call, settings)
+    except Exception as exc:  # noqa: BLE001 - tool failures must be captured in traces
+        status = "error"
+        error = str(exc)
+        result = {"error": error}
     return call.model_copy(
-        update={"result": result, "latency_ms": (time.perf_counter() - started) * 1000}
+        update={
+            "result": result,
+            "latency_ms": (time.perf_counter() - started) * 1000,
+            "backend": backend,
+            "status": status,
+            "error": error,
+            "audit": {
+                "backend": backend,
+                "attempts": max(1, settings.tool_retries + 1),
+                "tool": call.name,
+            },
+        }
     )
 
+
+async def _execute_with_backend(call: ToolCall, settings: RuntimeSettings) -> Any:
+    if settings.tool_backend == "mock":
+        return await _execute_mock_backend(call)
+    if settings.tool_backend == "http":
+        return await _execute_http_backend(call, settings)
+    return await _execute_mcp_backend(call, settings)
+
+
+async def _execute_mock_backend(call: ToolCall) -> Any:
+    handler = TOOL_REGISTRY.get(call.name)
+    if handler is None:
+        return {"error": f"tool '{call.name}' is not registered"}
+    return await handler(call.arguments)
+
+
+async def _execute_http_backend(call: ToolCall, settings: RuntimeSettings) -> Any:
+    if not settings.tool_http_base_url:
+        raise RuntimeError("TOOL_HTTP_BASE_URL is required for TOOL_BACKEND=http")
+    url = f"{settings.tool_http_base_url.rstrip('/')}/tools/{call.name}"
+    payload = {"tool": call.name, "arguments": call.arguments}
+    return await _post_json_with_retries(url, payload, settings)
+
+
+async def _execute_mcp_backend(call: ToolCall, settings: RuntimeSettings) -> Any:
+    if not settings.tool_mcp_endpoint:
+        raise RuntimeError("TOOL_MCP_ENDPOINT is required for TOOL_BACKEND=mcp")
+    payload = {
+        "jsonrpc": "2.0",
+        "id": f"tool-{call.name}",
+        "method": "tools/call",
+        "params": {"name": call.name, "arguments": call.arguments},
+    }
+    response = await _post_json_with_retries(settings.tool_mcp_endpoint, payload, settings)
+    if isinstance(response, dict) and "result" in response:
+        return response["result"]
+    return response
+
+
+async def _post_json_with_retries(url: str, payload: dict[str, Any], settings: RuntimeSettings) -> Any:
+    last_error: Exception | None = None
+    for _attempt in range(settings.tool_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=settings.tool_timeout_seconds) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                return response.json()
+        except Exception as exc:  # noqa: BLE001 - retry transport and upstream errors uniformly
+            last_error = exc
+            await asyncio.sleep(0)
+    if last_error is None:
+        raise RuntimeError("tool backend request failed without an exception")
+    raise last_error

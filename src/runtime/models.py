@@ -57,6 +57,10 @@ class ToolCall(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
     result: Any = None
     latency_ms: float = 0.0
+    backend: str = "mock"
+    status: Literal["success", "error"] = "success"
+    error: str | None = None
+    audit: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentResponse(BaseModel):
@@ -120,4 +124,3 @@ class EvalResult(BaseModel):
     total_cost_cents: float
     cases: list[EvalCaseResult]
     baseline_comparison: dict[str, Any] = Field(default_factory=dict)
-

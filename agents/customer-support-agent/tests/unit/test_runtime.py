@@ -7,7 +7,13 @@ import pytest
 from src.runtime.agent_executor import AgentExecutor, GuardrailViolation
 from src.runtime.models import Guardrails, InvokeRequest, ProviderRequest, ToolCall
 from src.runtime.providers import get_provider, serialize_tool_for_provider, tool_input_schema
-from src.runtime.tools import execute_tool
+from src.runtime.settings import ProductionConfigurationError, RuntimeSettings, load_settings
+from src.runtime.tools import (
+    _execute_http_backend,
+    _execute_mcp_backend,
+    _post_json_with_retries,
+    execute_tool,
+)
 
 
 @pytest.mark.asyncio
@@ -153,9 +159,163 @@ async def test_production_anthropic_provider_normalizes_response(
 async def test_unknown_tool_and_missing_provider_paths() -> None:
     call = await execute_tool(ToolCall(name="missing_tool", arguments={}))
     assert call.result["error"]
+    assert call.backend == "mock"
+    assert call.status == "success"
 
     with pytest.raises(ValueError):
         get_provider("missing")
+
+
+@pytest.mark.asyncio
+async def test_http_tool_backend_records_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_http_backend(call: ToolCall, settings: object) -> dict[str, object]:
+        return {"ok": True, "tool": call.name, "settings": bool(settings)}
+
+    monkeypatch.setenv("TOOL_BACKEND", "http")
+    monkeypatch.setenv("TOOL_HTTP_BASE_URL", "https://tools.example.test")
+    monkeypatch.setattr("src.runtime.tools._execute_http_backend", fake_http_backend)
+
+    call = await execute_tool(ToolCall(name="lookup_customer", arguments={"customer_id": "cus_123"}))
+
+    assert call.backend == "http"
+    assert call.status == "success"
+    assert call.audit["backend"] == "http"
+    assert call.result["tool"] == "lookup_customer"
+
+    async def fake_post(url: str, payload: dict[str, object], settings: object) -> dict[str, object]:
+        return {"url": url, "payload": payload, "settings": bool(settings)}
+
+    monkeypatch.setattr("src.runtime.tools._post_json_with_retries", fake_post)
+    result = await _execute_http_backend(
+        ToolCall(name="search_knowledge_base", arguments={"query": "general"}),
+        RuntimeSettings(tool_backend="http", tool_http_base_url="https://tools.example.test"),
+    )
+    assert result["url"] == "https://tools.example.test/tools/search_knowledge_base"
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_backend_and_backend_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_post(url: str, payload: dict[str, object], settings: object) -> dict[str, object]:
+        return {
+            "result": {
+                "url": url,
+                "name": payload["params"]["name"],  # type: ignore[index]
+                "settings": bool(settings),
+            }
+        }
+
+    monkeypatch.setenv("TOOL_BACKEND", "mcp")
+    monkeypatch.setenv("TOOL_MCP_ENDPOINT", "https://mcp.example.test/messages")
+    monkeypatch.setattr("src.runtime.tools._post_json_with_retries", fake_post)
+    call = await execute_tool(ToolCall(name="create_ticket", arguments={"priority": "high"}))
+
+    assert call.backend == "mcp"
+    assert call.status == "success"
+    assert call.result["name"] == "create_ticket"
+
+    monkeypatch.setenv("TOOL_BACKEND", "http")
+    monkeypatch.delenv("TOOL_HTTP_BASE_URL", raising=False)
+    failed = await execute_tool(ToolCall(name="lookup_customer", arguments={}))
+    assert failed.status == "error"
+    assert "TOOL_HTTP_BASE_URL" in failed.error
+
+    monkeypatch.setenv("TOOL_BACKEND", "mcp")
+    monkeypatch.delenv("TOOL_MCP_ENDPOINT", raising=False)
+    mcp_failed = await execute_tool(ToolCall(name="lookup_customer", arguments={}))
+    assert mcp_failed.status == "error"
+    assert "TOOL_MCP_ENDPOINT" in mcp_failed.error
+
+    async def fake_non_result_post(
+        url: str,
+        payload: dict[str, object],
+        settings: object,
+    ) -> dict[str, object]:
+        return {"ok": True, "url": url, "payload": payload, "settings": bool(settings)}
+
+    monkeypatch.setattr("src.runtime.tools._post_json_with_retries", fake_non_result_post)
+    raw_mcp = await _execute_mcp_backend(
+        ToolCall(name="lookup_customer", arguments={}),
+        RuntimeSettings(tool_backend="mcp", tool_mcp_endpoint="https://mcp.example.test/messages"),
+    )
+    assert raw_mcp["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_post_json_with_retries_uses_httpx(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"ok": True}
+
+    class FakeClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        async def __aenter__(self) -> FakeClient:
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return None
+
+        async def post(self, url: str, json: dict[str, object]) -> FakeResponse:
+            assert url == "https://tools.example.test/tools/search"
+            assert json["tool"] == "search"
+            return FakeResponse()
+
+    monkeypatch.setattr("src.runtime.tools.httpx.AsyncClient", FakeClient)
+    result = await _post_json_with_retries(
+        "https://tools.example.test/tools/search",
+        {"tool": "search"},
+        RuntimeSettings(tool_backend="http", tool_timeout_seconds=2, tool_retries=0),
+    )
+
+    assert result == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_post_json_with_retries_reports_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FailingClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        async def __aenter__(self) -> FailingClient:
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return None
+
+        async def post(self, url: str, json: dict[str, object]) -> object:
+            raise httpx.ConnectError("network down")
+
+    import httpx
+
+    monkeypatch.setattr("src.runtime.tools.httpx.AsyncClient", FailingClient)
+    with pytest.raises(httpx.ConnectError):
+        await _post_json_with_retries(
+            "https://tools.example.test/tools/search",
+            {"tool": "search"},
+            RuntimeSettings(tool_backend="http", tool_timeout_seconds=2, tool_retries=0),
+        )
+
+    with pytest.raises(RuntimeError):
+        await _post_json_with_retries(
+            "https://tools.example.test/tools/search",
+            {"tool": "search"},
+            RuntimeSettings(tool_backend="http", tool_retries=-1),
+        )
+
+
+def test_tool_backend_settings_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RUNTIME_MODE", "bad")
+    with pytest.raises(ProductionConfigurationError):
+        load_settings()
+
+    monkeypatch.setenv("RUNTIME_MODE", "demo")
+    monkeypatch.setenv("TOOL_BACKEND", "invalid")
+    with pytest.raises(ProductionConfigurationError):
+        load_settings()
 
 
 def test_missing_agent_config_and_json_guardrail() -> None:

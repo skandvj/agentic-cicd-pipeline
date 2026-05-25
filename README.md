@@ -77,9 +77,15 @@ The runtime is explicit about live-user readiness:
 - `RUNTIME_MODE=demo`: deterministic local mode for CI, onboarding, and offline development.
 - `RUNTIME_MODE=production`: live-user mode. Startup fails if provider credentials or persistence settings are missing.
 
-Production mode currently requires `DATABASE_URL`, `REDIS_URL`, and API keys for every configured model provider used by agents, such as `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`.
+Production mode currently requires `DATABASE_URL`, `REDIS_URL`, API keys for every configured model provider used by agents, and a live tool backend.
 
-The current demo tool implementations return deterministic data so CI can run without live SaaS credentials. Production deployments must configure live tool backends.
+Tool backends:
+
+- `TOOL_BACKEND=mock`: deterministic sample tools for demo and CI only.
+- `TOOL_BACKEND=http`: POST tool calls to `TOOL_HTTP_BASE_URL/tools/{tool_name}`.
+- `TOOL_BACKEND=mcp`: call an MCP-compatible HTTP endpoint with `tools/call`.
+
+Tool responses include backend, status, error, latency, and audit metadata in every trace.
 
 ## Eval Framework
 
