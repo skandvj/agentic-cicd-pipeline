@@ -7,8 +7,23 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Query
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    Float,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    create_engine,
+    desc,
+    insert,
+    select,
+)
 
 from src.runtime.models import AgentResponse, EvalResult, InvokeRequest
+from src.runtime.settings import load_settings
 
 router = APIRouter(prefix="/api", tags=["observability"])
 
@@ -98,6 +113,117 @@ class InMemoryTraceStore:
         }
 
 
+class PostgresTraceStore:
+    """SQLAlchemy-backed trace store used in production mode."""
+
+    def __init__(self, database_url: str) -> None:
+        self.engine = create_engine(database_url, future=True)
+        self.metadata = MetaData()
+        self.agent_traces = Table(
+            "agent_traces",
+            self.metadata,
+            Column("id", Integer, primary_key=True, autoincrement=True),
+            Column("agent_id", String, index=True, nullable=False),
+            Column("trace_id", String, unique=True, index=True, nullable=False),
+            Column("input", String, nullable=False),
+            Column("output", String, nullable=False),
+            Column("tool_calls", JSON, nullable=False),
+            Column("latency_ms", Float, nullable=False),
+            Column("tokens_in", Integer, nullable=False),
+            Column("tokens_out", Integer, nullable=False),
+            Column("cost_cents", Float, nullable=False),
+            Column("created_at", DateTime(timezone=True), nullable=False),
+        )
+        self.eval_runs = Table(
+            "eval_runs",
+            self.metadata,
+            Column("id", Integer, primary_key=True, autoincrement=True),
+            Column("agent_id", String, index=True, nullable=False),
+            Column("suite", String, index=True, nullable=False),
+            Column("results", JSON, nullable=False),
+            Column("metrics", JSON, nullable=False),
+            Column("baseline_comparison", JSON, nullable=False),
+            Column("created_at", DateTime(timezone=True), nullable=False),
+        )
+        self.metadata.create_all(self.engine)
+
+    def record_trace(self, agent_id: str, request: InvokeRequest, response: AgentResponse) -> None:
+        tokens_out = max(0, response.tokens_used // 2)
+        tokens_in = response.tokens_used - tokens_out
+        with self.engine.begin() as connection:
+            connection.execute(
+                insert(self.agent_traces).values(
+                    agent_id=agent_id,
+                    trace_id=response.trace_id,
+                    input=request.message,
+                    output=response.output,
+                    tool_calls=[tool.model_dump(mode="json") for tool in response.tool_calls],
+                    latency_ms=response.latency_ms,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    cost_cents=response.cost_cents,
+                    created_at=datetime.now(UTC),
+                )
+            )
+
+    def record_eval_run(self, result: EvalResult) -> None:
+        with self.engine.begin() as connection:
+            connection.execute(
+                insert(self.eval_runs).values(
+                    agent_id=result.agent_id,
+                    suite=result.suite,
+                    results=[case.model_dump(mode="json") for case in result.cases],
+                    metrics=result.model_dump(
+                        mode="json",
+                        exclude={"cases", "baseline_comparison", "agent_id", "suite"},
+                    ),
+                    baseline_comparison=result.baseline_comparison,
+                    created_at=datetime.now(UTC),
+                )
+            )
+
+    def query_traces(self, agent_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        statement = select(self.agent_traces).order_by(desc(self.agent_traces.c.created_at)).limit(limit)
+        if agent_id is not None:
+            statement = statement.where(self.agent_traces.c.agent_id == agent_id)
+        with self.engine.begin() as connection:
+            return [_row_to_dict(row) for row in connection.execute(statement).mappings()]
+
+    def query_eval_runs(
+        self,
+        agent_id: str | None = None,
+        suite: str | None = None,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        statement = select(self.eval_runs).order_by(desc(self.eval_runs.c.created_at)).limit(limit)
+        if agent_id is not None:
+            statement = statement.where(self.eval_runs.c.agent_id == agent_id)
+        if suite is not None:
+            statement = statement.where(self.eval_runs.c.suite == suite)
+        with self.engine.begin() as connection:
+            return [_row_to_dict(row) for row in connection.execute(statement).mappings()]
+
+    def summary(self, agent_id: str | None = None, period: str = "24h") -> dict[str, Any]:
+        cutoff = datetime.now(UTC) - _parse_period(period)
+        statement = select(self.agent_traces).where(self.agent_traces.c.created_at >= cutoff)
+        if agent_id is not None:
+            statement = statement.where(self.agent_traces.c.agent_id == agent_id)
+        with self.engine.begin() as connection:
+            rows = [_row_to_dict(row) for row in connection.execute(statement).mappings()]
+        by_agent: dict[str, int] = defaultdict(int)
+        for row in rows:
+            by_agent[str(row["agent_id"])] += 1
+        latency_values = sorted(float(row["latency_ms"]) for row in rows)
+        return {
+            "period": period,
+            "agent_id": agent_id,
+            "invocations": len(rows),
+            "by_agent": dict(by_agent),
+            "total_cost_cents": round(sum(float(row["cost_cents"]) for row in rows), 5),
+            "p95_latency_ms": _percentile(latency_values, 0.95),
+        }
+
+
 def _parse_period(period: str) -> timedelta:
     if period.endswith("h"):
         return timedelta(hours=int(period[:-1]))
@@ -113,7 +239,22 @@ def _percentile(values: list[float], quantile: float) -> float:
     return values[index]
 
 
-trace_store = InMemoryTraceStore()
+def build_trace_store() -> InMemoryTraceStore | PostgresTraceStore:
+    settings = load_settings()
+    if settings.is_production and settings.database_url:
+        return PostgresTraceStore(settings.database_url)
+    return InMemoryTraceStore()
+
+
+def _row_to_dict(row: Any) -> dict[str, Any]:
+    data = dict(row)
+    created_at = data.get("created_at")
+    if isinstance(created_at, datetime):
+        data["created_at"] = created_at.isoformat()
+    return data
+
+
+trace_store = build_trace_store()
 
 
 @router.get("/traces")

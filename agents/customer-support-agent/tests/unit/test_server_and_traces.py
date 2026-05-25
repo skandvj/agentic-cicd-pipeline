@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from src.dashboard.traces import InMemoryTraceStore
+from src.dashboard.traces import InMemoryTraceStore, PostgresTraceStore
 from src.runtime.models import AgentResponse, InvokeRequest
 from src.runtime.server import app
 from src.runtime.settings import ProductionConfigurationError, RuntimeSettings, validate_production_settings
@@ -82,6 +82,24 @@ def test_trace_store_query_and_summary() -> None:
     assert summary["invocations"] == 1
     assert summary["p95_latency_ms"] == 25.0
     assert store.summary(agent_id="agent-a", period="1d")["invocations"] == 1
+
+
+def test_sql_trace_store_persists_traces_and_eval_runs() -> None:
+    store = PostgresTraceStore("sqlite+pysqlite:///:memory:")
+    request = InvokeRequest(message="persist me")
+    response = AgentResponse(
+        output="ok",
+        tool_calls=[],
+        latency_ms=15.0,
+        tokens_used=12,
+        cost_cents=0.02,
+        trace_id="trace-sql-1",
+    )
+    store.record_trace("agent-sql", request, response)
+
+    traces = store.query_traces(agent_id="agent-sql")
+    assert traces[0]["trace_id"] == "trace-sql-1"
+    assert store.summary(agent_id="agent-sql")["invocations"] == 1
 
 
 def test_production_settings_fail_fast_without_live_config() -> None:

@@ -87,6 +87,12 @@ Tool backends:
 
 Tool responses include backend, status, error, latency, and audit metadata in every trace.
 
+Production observability is persisted through PostgreSQL. Initialize the schema with:
+
+```bash
+python scripts/init_db.py
+```
+
 ## Eval Framework
 
 Eval suites are JSONL files under `agents/{agent_id}/evals`.
