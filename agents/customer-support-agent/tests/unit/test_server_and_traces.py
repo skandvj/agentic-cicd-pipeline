@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
 from src.dashboard.traces import InMemoryTraceStore
 from src.runtime.models import AgentResponse, InvokeRequest
 from src.runtime.server import app
+from src.runtime.settings import ProductionConfigurationError, RuntimeSettings, validate_production_settings
 
 
 def test_api_lists_agents_and_invokes_agent() -> None:
@@ -12,6 +16,7 @@ def test_api_lists_agents_and_invokes_agent() -> None:
 
     health = client.get("/health")
     assert health.status_code == 200
+    assert health.json()["mode"] == "demo"
     assert "customer-support-agent" in health.json()["agents"]
 
     response = client.post(
@@ -77,3 +82,12 @@ def test_trace_store_query_and_summary() -> None:
     assert summary["invocations"] == 1
     assert summary["p95_latency_ms"] == 25.0
     assert store.summary(agent_id="agent-a", period="1d")["invocations"] == 1
+
+
+def test_production_settings_fail_fast_without_live_config() -> None:
+    settings = RuntimeSettings(mode="production")
+
+    with pytest.raises(ProductionConfigurationError) as error:
+        validate_production_settings(Path.cwd(), settings)
+
+    assert "DATABASE_URL" in str(error.value)

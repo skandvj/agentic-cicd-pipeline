@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException
@@ -16,8 +17,18 @@ from src.dashboard.traces import router as traces_router
 from src.dashboard.traces import trace_store
 from src.runtime.agent_executor import REPO_ROOT, AgentExecutor, GuardrailViolation
 from src.runtime.models import AgentResponse, InvokeRequest
+from src.runtime.settings import load_settings, validate_production_settings
 
-app = FastAPI(title="Agentic CI/CD Runtime", version="0.1.0")
+SETTINGS = load_settings()
+
+
+@asynccontextmanager
+async def lifespan(app_: FastAPI) -> AsyncIterator[None]:
+    validate_production_settings(REPO_ROOT, SETTINGS)
+    yield
+
+
+app = FastAPI(title="Agentic CI/CD Runtime", version="0.1.0", lifespan=lifespan)
 app.include_router(traces_router)
 _EXECUTOR_CACHE: dict[str, AgentExecutor] = {}
 
@@ -44,7 +55,12 @@ def get_executor(agent_id: str) -> AgentExecutor:
 
 @app.get("/health")
 async def health() -> dict[str, object]:
-    return {"status": "ok", "agents": available_agent_ids()}
+    return {
+        "status": "ok",
+        "mode": SETTINGS.mode,
+        "environment": SETTINGS.environment,
+        "agents": available_agent_ids(),
+    }
 
 
 @app.get("/metrics")

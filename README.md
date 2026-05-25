@@ -70,7 +70,16 @@ Agents live under `agents/{agent_id}/agent.yaml`.
 | `guardrails.require_citation` | Adds a citation from tool results when available |
 | `temperature`, `max_tokens` | Provider generation controls |
 
-The current tool implementations return deterministic mock data so CI can run without live SaaS credentials. Replace handlers in `src/runtime/tools.py` with real integrations when ready.
+## Runtime Modes
+
+The runtime is explicit about live-user readiness:
+
+- `RUNTIME_MODE=demo`: deterministic local mode for CI, onboarding, and offline development.
+- `RUNTIME_MODE=production`: live-user mode. Startup fails if provider credentials or persistence settings are missing.
+
+Production mode currently requires `DATABASE_URL`, `REDIS_URL`, and API keys for every configured model provider used by agents, such as `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`.
+
+The current demo tool implementations return deterministic data so CI can run without live SaaS credentials. Production deployments must configure live tool backends.
 
 ## Eval Framework
 
