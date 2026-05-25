@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any
+
+import anthropic
+from openai import OpenAI
+
+from src.runtime.settings import load_settings
 
 
 @dataclass(frozen=True)
@@ -69,8 +76,22 @@ class LLMJudgeScorer(BaseScorer):
     """
 
     name = "llm_judge"
+    _openai_client: Any | None = None
+    _anthropic_client: Any | None = None
 
     def score(self, actual: str, expected: str | None = None, **_: object) -> Score:
+        settings = load_settings()
+        if settings.eval_judge_provider == "openai":
+            return self._score_with_openai(actual, expected or "", settings.eval_judge_model or "gpt-4o-mini")
+        if settings.eval_judge_provider == "anthropic":
+            return self._score_with_anthropic(
+                actual,
+                expected or "",
+                settings.eval_judge_model or "claude-3-haiku-20240307",
+            )
+        return self._deterministic_score(actual, expected)
+
+    def _deterministic_score(self, actual: str, expected: str | None = None) -> Score:
         expected_terms = {
             token for token in _normalize(expected or "").split() if len(token) > 3
         }
@@ -82,6 +103,41 @@ class LLMJudgeScorer(BaseScorer):
         value = min(1.0, coverage + citation_bonus)
         five_point = round(value * 5, 2)
         return Score(value, value >= 0.7, f"judge score {five_point}/5 from expected concept coverage")
+
+    def _score_with_openai(self, actual: str, expected: str, model: str) -> Score:
+        response = self._openai().chat.completions.create(
+            model=model,
+            messages=_judge_messages(actual, expected),
+            temperature=0,
+            response_format={"type": "json_object"},
+        )
+        content = str(response.choices[0].message.content or "{}")
+        return _score_from_judge_json(content)
+
+    def _score_with_anthropic(self, actual: str, expected: str, model: str) -> Score:
+        response = self._anthropic().messages.create(
+            model=model,
+            max_tokens=512,
+            temperature=0,
+            system="Return only JSON with keys score and reasoning.",
+            messages=[{"role": "user", "content": _judge_prompt(actual, expected)}],
+        )
+        content = "\n".join(
+            str(getattr(block, "text", ""))
+            for block in getattr(response, "content", [])
+            if getattr(block, "type", "") == "text"
+        )
+        return _score_from_judge_json(content)
+
+    def _openai(self) -> Any:
+        if self._openai_client is None:
+            self._openai_client = OpenAI(api_key=load_settings().openai_api_key)
+        return self._openai_client
+
+    def _anthropic(self) -> Any:
+        if self._anthropic_client is None:
+            self._anthropic_client = anthropic.Anthropic(api_key=load_settings().anthropic_api_key)
+        return self._anthropic_client
 
 
 class SafetyScorer(BaseScorer):
@@ -139,3 +195,31 @@ def get_scorer(name: str) -> BaseScorer:
         return SCORERS[name]
     except KeyError as exc:
         raise ValueError(f"unknown scorer '{name}'") from exc
+
+
+def _judge_messages(actual: str, expected: str) -> list[dict[str, str]]:
+    return [
+        {
+            "role": "system",
+            "content": (
+                "Rate the response against the expected answer. "
+                "Return JSON: {\"score\": 0-5, \"reasoning\": \"...\"}."
+            ),
+        },
+        {"role": "user", "content": _judge_prompt(actual, expected)},
+    ]
+
+
+def _judge_prompt(actual: str, expected: str) -> str:
+    return f"Expected answer:\n{expected}\n\nActual response:\n{actual}\n\nScore from 0 to 5."
+
+
+def _score_from_judge_json(content: str) -> Score:
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        return Score(0.0, False, "judge returned invalid JSON")
+    raw_score = float(parsed.get("score", 0.0))
+    value = max(0.0, min(1.0, raw_score / 5.0))
+    reasoning = str(parsed.get("reasoning", "live judge score"))
+    return Score(value, value >= 0.7, reasoning)

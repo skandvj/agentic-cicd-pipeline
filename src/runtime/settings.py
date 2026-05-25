@@ -11,6 +11,7 @@ import yaml
 
 RuntimeMode = Literal["demo", "production"]
 ToolBackend = Literal["mock", "http", "mcp"]
+EvalJudgeProvider = Literal["deterministic", "openai", "anthropic"]
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,8 @@ class RuntimeSettings:
     tool_mcp_endpoint: str | None = None
     tool_timeout_seconds: float = 10.0
     tool_retries: int = 1
+    eval_judge_provider: EvalJudgeProvider = "deterministic"
+    eval_judge_model: str | None = None
 
     @property
     def is_production(self) -> bool:
@@ -43,6 +46,11 @@ def load_settings() -> RuntimeSettings:
     raw_tool_backend = os.getenv("TOOL_BACKEND", "mock").strip().lower()
     if raw_tool_backend not in {"mock", "http", "mcp"}:
         raise ProductionConfigurationError("TOOL_BACKEND must be one of: mock, http, mcp")
+    raw_eval_judge = os.getenv("EVAL_JUDGE_PROVIDER", "deterministic").strip().lower()
+    if raw_eval_judge not in {"deterministic", "openai", "anthropic"}:
+        raise ProductionConfigurationError(
+            "EVAL_JUDGE_PROVIDER must be one of: deterministic, openai, anthropic"
+        )
     return RuntimeSettings(
         mode=cast(RuntimeMode, raw_mode),
         environment=os.getenv("ENVIRONMENT", "development"),
@@ -55,6 +63,8 @@ def load_settings() -> RuntimeSettings:
         tool_mcp_endpoint=_blank_to_none(os.getenv("TOOL_MCP_ENDPOINT")),
         tool_timeout_seconds=float(os.getenv("TOOL_TIMEOUT_SECONDS", "10")),
         tool_retries=int(os.getenv("TOOL_RETRIES", "1")),
+        eval_judge_provider=cast(EvalJudgeProvider, raw_eval_judge),
+        eval_judge_model=_blank_to_none(os.getenv("EVAL_JUDGE_MODEL")),
     )
 
 
@@ -80,6 +90,8 @@ def validate_production_settings(repo_root: Path, settings: RuntimeSettings | No
         missing.append("TOOL_HTTP_BASE_URL")
     if resolved.tool_backend == "mcp" and not resolved.tool_mcp_endpoint:
         missing.append("TOOL_MCP_ENDPOINT")
+    if resolved.eval_judge_provider == "deterministic":
+        missing.append("EVAL_JUDGE_PROVIDER=openai|anthropic")
 
     if missing:
         joined = ", ".join(sorted(set(missing)))

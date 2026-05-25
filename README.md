@@ -93,6 +93,15 @@ Production observability is persisted through PostgreSQL. Initialize the schema 
 python scripts/init_db.py
 ```
 
+Production evals should use a live judge:
+
+```bash
+EVAL_JUDGE_PROVIDER=openai
+EVAL_JUDGE_MODEL=gpt-4o-mini
+```
+
+Demo/CI may use `EVAL_JUDGE_PROVIDER=deterministic`.
+
 ## Eval Framework
 
 Eval suites are JSONL files under `agents/{agent_id}/evals`.

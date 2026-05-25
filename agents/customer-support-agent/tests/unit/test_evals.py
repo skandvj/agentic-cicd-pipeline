@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from src.dashboard.metrics import record_eval_score, record_invocation
 from src.evals.reporter import EvalReporter
-from src.evals.runner import EvalRunner
+from src.evals.runner import EvalRunner, _percentile
 from src.evals.scorers import (
     ContainsScorer,
     ExactMatchScorer,
@@ -24,11 +26,80 @@ def test_scorers_cover_quality_safety_and_latency() -> None:
     assert not LatencyScorer().score("", latency_ms=200, max_latency_ms=100).passed
 
 
+def test_live_llm_judge_normalizes_openai_score(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeCompletions:
+        def create(self, **_: object) -> object:
+            message = type("Message", (), {"content": '{"score": 4, "reasoning": "solid answer"}'})
+            choice = type("Choice", (), {"message": message})
+            return type("Response", (), {"choices": [choice]})
+
+    monkeypatch.setenv("EVAL_JUDGE_PROVIDER", "openai")
+    scorer = LLMJudgeScorer()
+    monkeypatch.setattr(
+        scorer,
+        "_openai_client",
+        type("Client", (), {"chat": type("Chat", (), {"completions": FakeCompletions()})()})(),
+    )
+
+    score = scorer.score("actual", "expected")
+
+    assert score.passed
+    assert score.value == 0.8
+    assert score.reasoning == "solid answer"
+
+
+def test_live_llm_judge_handles_anthropic_and_invalid_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeMessages:
+        def create(self, **_: object) -> object:
+            return SimpleNamespace(
+                content=[SimpleNamespace(type="text", text='{"score": 5, "reasoning": "excellent"}')]
+            )
+
+    monkeypatch.setenv("EVAL_JUDGE_PROVIDER", "anthropic")
+    scorer = LLMJudgeScorer()
+    monkeypatch.setattr(scorer, "_anthropic_client", SimpleNamespace(messages=FakeMessages()))
+
+    score = scorer.score("actual", "expected")
+    assert score.value == 1.0
+    assert score.reasoning == "excellent"
+
+    class InvalidCompletions:
+        def create(self, **_: object) -> object:
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="not-json"))]
+            )
+
+    monkeypatch.setenv("EVAL_JUDGE_PROVIDER", "openai")
+    scorer = LLMJudgeScorer()
+    monkeypatch.setattr(
+        scorer,
+        "_openai_client",
+        SimpleNamespace(chat=SimpleNamespace(completions=InvalidCompletions())),
+    )
+    invalid = scorer.score("actual", "expected")
+    assert not invalid.passed
+    assert invalid.reasoning == "judge returned invalid JSON"
+
+
 def test_suite_loading_and_alias_resolution() -> None:
     runner = EvalRunner()
     assert runner.resolve_agent_id("customer-support") == "customer-support-agent"
     assert set(runner.list_suites("customer-support")) >= {"accuracy", "latency", "safety"}
     assert len(runner.load_eval_suite("customer-support", "accuracy")) == 20
+
+
+def test_baseline_comparison_uses_last_five_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_runs(**_: object) -> list[dict[str, object]]:
+        return [{"metrics": {"accuracy": 0.9}}, {"metrics": {"accuracy": 0.8}}]
+
+    monkeypatch.setattr("src.evals.runner.trace_store.query_eval_runs", fake_runs)
+
+    comparison = EvalRunner()._baseline_comparison("agent", "accuracy", 1.0)
+
+    assert comparison["baseline"] == "last_5"
+    assert comparison["baseline_accuracy"] == 0.85
+    assert comparison["accuracy_delta"] == 0.15
+    assert _percentile([], 0.95) == 0.0
 
 
 @pytest.mark.asyncio

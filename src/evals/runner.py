@@ -120,8 +120,12 @@ class EvalRunner:
         prior_runs = trace_store.query_eval_runs(agent_id=agent_id, suite=suite_name, limit=5)
         if not prior_runs:
             return {"baseline": "none", "accuracy_delta": 0.0}
-        prior_accuracy = float(prior_runs[0]["metrics"].get("accuracy", 0.0))
-        return {"baseline": "latest", "accuracy_delta": round(accuracy - prior_accuracy, 4)}
+        prior_accuracy = mean(float(run["metrics"].get("accuracy", 0.0)) for run in prior_runs)
+        return {
+            "baseline": "last_5",
+            "baseline_accuracy": round(prior_accuracy, 4),
+            "accuracy_delta": round(accuracy - prior_accuracy, 4),
+        }
 
 
 def _percentile(values: Iterable[float], quantile: float) -> float:
@@ -130,4 +134,3 @@ def _percentile(values: Iterable[float], quantile: float) -> float:
         return 0.0
     index = min(len(ordered) - 1, round((len(ordered) - 1) * quantile))
     return ordered[index]
-
