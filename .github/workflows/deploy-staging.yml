@@ -7,23 +7,66 @@ on:
 permissions:
   contents: read
   packages: write
+  actions: write
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: staging
+    env:
+      RUNTIME_MODE: production
+      RUNTIME_IMAGE: ghcr.io/${{ github.repository }}/runtime:${{ github.sha }}
+      ENVIRONMENT: staging
+      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      REDIS_URL: ${{ secrets.STAGING_REDIS_URL }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      TOOL_BACKEND: ${{ secrets.TOOL_BACKEND }}
+      TOOL_HTTP_BASE_URL: ${{ secrets.TOOL_HTTP_BASE_URL }}
+      TOOL_MCP_ENDPOINT: ${{ secrets.TOOL_MCP_ENDPOINT }}
+      TOOL_TIMEOUT_SECONDS: ${{ vars.TOOL_TIMEOUT_SECONDS || '10' }}
+      TOOL_RETRIES: ${{ vars.TOOL_RETRIES || '1' }}
+      EVAL_JUDGE_PROVIDER: ${{ secrets.EVAL_JUDGE_PROVIDER }}
+      EVAL_JUDGE_MODEL: ${{ secrets.EVAL_JUDGE_MODEL }}
+      AUTO_PROMOTE_PROD: ${{ vars.AUTO_PROMOTE_PROD }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Verify production secrets
+        run: python scripts/check_production_config.py
+      - name: Write runtime env file
+        run: |
+          cat > .env <<EOF
+          RUNTIME_MODE=${RUNTIME_MODE}
+          RUNTIME_IMAGE=${RUNTIME_IMAGE}
+          ENVIRONMENT=${ENVIRONMENT}
+          DATABASE_URL=${DATABASE_URL}
+          REDIS_URL=${REDIS_URL}
+          OPENAI_API_KEY=${OPENAI_API_KEY}
+          ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+          TOOL_BACKEND=${TOOL_BACKEND}
+          TOOL_HTTP_BASE_URL=${TOOL_HTTP_BASE_URL}
+          TOOL_MCP_ENDPOINT=${TOOL_MCP_ENDPOINT}
+          TOOL_TIMEOUT_SECONDS=${TOOL_TIMEOUT_SECONDS}
+          TOOL_RETRIES=${TOOL_RETRIES}
+          EVAL_JUDGE_PROVIDER=${EVAL_JUDGE_PROVIDER}
+          EVAL_JUDGE_MODEL=${EVAL_JUDGE_MODEL}
+          EOF
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build image
-        run: docker build -t ghcr.io/${{ github.repository }}/runtime:${{ github.sha }} .
+        run: docker build -t "$RUNTIME_IMAGE" .
       - name: Push image
-        run: docker push ghcr.io/${{ github.repository }}/runtime:${{ github.sha }}
+        run: docker push "$RUNTIME_IMAGE"
       - name: Deploy compose stack
-        run: docker compose up -d
+        run: docker compose up -d --no-build
       - name: Wait for staging
         run: |
           for i in {1..30}; do
@@ -31,21 +74,17 @@ jobs:
             sleep 1
           done
           exit 1
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install -r requirements.txt
       - name: Integration eval suite
         run: |
           python -m src.evals.cli run-evals --agent customer-support --suite accuracy --threshold 0.95 --output staging-accuracy.md
           python -m src.evals.cli run-evals --agent customer-support --suite safety --threshold 1.0 --output staging-safety.md
       - name: Slack notification
         if: env.SLACK_WEBHOOK_URL != ''
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           payload='{"text":"Agentic CI/CD staging deploy passed eval gates for '${{ github.sha }}'."}'
           curl -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK_URL"
-      - name: Auto-promotion marker
-        run: echo "Staging gates passed; production workflow may be manually dispatched."
-
+      - name: Auto-promote production
+        if: env.AUTO_PROMOTE_PROD == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-prod.yml --ref main -f image_sha=${{ github.sha }}

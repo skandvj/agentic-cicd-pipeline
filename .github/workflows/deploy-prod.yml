@@ -14,18 +14,54 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: production
+    env:
+      RUNTIME_MODE: production
+      RUNTIME_IMAGE: ghcr.io/${{ github.repository }}/runtime:${{ inputs.image_sha || github.sha }}
+      ENVIRONMENT: production
+      DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+      REDIS_URL: ${{ secrets.PROD_REDIS_URL }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      TOOL_BACKEND: ${{ secrets.TOOL_BACKEND }}
+      TOOL_HTTP_BASE_URL: ${{ secrets.TOOL_HTTP_BASE_URL }}
+      TOOL_MCP_ENDPOINT: ${{ secrets.TOOL_MCP_ENDPOINT }}
+      TOOL_TIMEOUT_SECONDS: ${{ vars.TOOL_TIMEOUT_SECONDS || '10' }}
+      TOOL_RETRIES: ${{ vars.TOOL_RETRIES || '1' }}
+      EVAL_JUDGE_PROVIDER: ${{ secrets.EVAL_JUDGE_PROVIDER }}
+      EVAL_JUDGE_MODEL: ${{ secrets.EVAL_JUDGE_MODEL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - name: Pull staging-validated image
+      - name: Verify production secrets
+        run: python scripts/check_production_config.py
+      - name: Write runtime env file
         run: |
-          IMAGE_SHA="${{ inputs.image_sha || github.sha }}"
-          docker pull ghcr.io/${{ github.repository }}/runtime:${IMAGE_SHA}
+          cat > .env <<EOF
+          RUNTIME_MODE=${RUNTIME_MODE}
+          RUNTIME_IMAGE=${RUNTIME_IMAGE}
+          ENVIRONMENT=${ENVIRONMENT}
+          DATABASE_URL=${DATABASE_URL}
+          REDIS_URL=${REDIS_URL}
+          OPENAI_API_KEY=${OPENAI_API_KEY}
+          ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+          TOOL_BACKEND=${TOOL_BACKEND}
+          TOOL_HTTP_BASE_URL=${TOOL_HTTP_BASE_URL}
+          TOOL_MCP_ENDPOINT=${TOOL_MCP_ENDPOINT}
+          TOOL_TIMEOUT_SECONDS=${TOOL_TIMEOUT_SECONDS}
+          TOOL_RETRIES=${TOOL_RETRIES}
+          EVAL_JUDGE_PROVIDER=${EVAL_JUDGE_PROVIDER}
+          EVAL_JUDGE_MODEL=${EVAL_JUDGE_MODEL}
+          EOF
+      - name: Pull staging-validated image
+        run: docker pull "$RUNTIME_IMAGE"
+      - name: Initialize production database
+        run: python scripts/init_db.py
       - name: Deploy production
-        run: docker compose up -d runtime
+        run: docker compose up -d --no-build runtime
       - name: Smoke test
         run: python scripts/smoke_test.py
       - name: Update baseline metrics

@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from src.dashboard.traces import PostgresTraceStore
 from src.runtime.settings import load_settings
 

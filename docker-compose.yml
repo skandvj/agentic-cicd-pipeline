@@ -1,5 +1,6 @@
 services:
   runtime:
+    image: ${RUNTIME_IMAGE:-agentic-cicd-pipeline-runtime:local}
     build: .
     ports: ["8000:8000"]
     depends_on: [postgres, redis]
@@ -36,4 +37,3 @@ services:
 
 volumes:
   pgdata_cicd:
-

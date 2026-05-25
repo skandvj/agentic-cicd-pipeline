@@ -92,6 +92,8 @@ def validate_production_settings(repo_root: Path, settings: RuntimeSettings | No
         missing.append("TOOL_MCP_ENDPOINT")
     if resolved.eval_judge_provider == "deterministic":
         missing.append("EVAL_JUDGE_PROVIDER=openai|anthropic")
+    if not resolved.eval_judge_model:
+        missing.append("EVAL_JUDGE_MODEL")
 
     if missing:
         joined = ", ".join(sorted(set(missing)))

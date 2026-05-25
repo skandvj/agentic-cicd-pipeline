@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from scripts.check_production_config import main as check_production_config
 from src.dashboard.traces import InMemoryTraceStore, PostgresTraceStore
 from src.runtime.models import AgentResponse, InvokeRequest
 from src.runtime.server import app
@@ -109,3 +110,34 @@ def test_production_settings_fail_fast_without_live_config() -> None:
         validate_production_settings(Path.cwd(), settings)
 
     assert "DATABASE_URL" in str(error.value)
+
+
+def test_production_config_script_reports_missing_env(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("RUNTIME_MODE", "production")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("REDIS_URL", raising=False)
+
+    assert check_production_config(Path.cwd()) == 1
+    assert "Production configuration check failed" in capsys.readouterr().err
+
+
+def test_production_config_script_accepts_live_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("RUNTIME_MODE", "production")
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg2://agent:pass@db:5432/agentic_cicd")
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic")
+    monkeypatch.setenv("TOOL_BACKEND", "http")
+    monkeypatch.setenv("TOOL_HTTP_BASE_URL", "https://tools.example.test")
+    monkeypatch.setenv("EVAL_JUDGE_PROVIDER", "openai")
+    monkeypatch.setenv("EVAL_JUDGE_MODEL", "gpt-4o-mini")
+
+    assert check_production_config(Path.cwd()) == 0
+    assert "environment=staging" in capsys.readouterr().out
