@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from src.runtime.agent_executor import AgentExecutor, GuardrailViolation
-from src.runtime.models import Guardrails, InvokeRequest, ToolCall
-from src.runtime.providers import get_provider, serialize_tool_for_provider
+from src.runtime.models import Guardrails, InvokeRequest, ProviderRequest, ToolCall
+from src.runtime.providers import get_provider, serialize_tool_for_provider, tool_input_schema
 from src.runtime.tools import execute_tool
 
 
@@ -60,10 +62,91 @@ def test_reload_and_tool_serialization() -> None:
     executor = AgentExecutor("customer-support-agent")
     config = executor.reload()
     serialized = serialize_tool_for_provider(config.tools[0])
+    schema = tool_input_schema(config.tools[0])
 
     assert config.provider == "anthropic"
     assert serialized["name"] == "search_knowledge_base"
     assert serialized["parameters"]["query"]["required"] is True
+    assert schema["required"] == ["query"]
+
+
+@pytest.mark.asyncio
+async def test_production_openai_provider_normalizes_live_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeCompletions:
+        async def create(self, **_: object) -> object:
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content="Live account brief",
+                            tool_calls=[
+                                SimpleNamespace(
+                                    function=SimpleNamespace(
+                                        name="web_search",
+                                        arguments='{"query":"Acme funding"}',
+                                    )
+                                )
+                            ],
+                        )
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=21, completion_tokens=8),
+            )
+
+    monkeypatch.setenv("RUNTIME_MODE", "production")
+    provider = get_provider("openai")
+    monkeypatch.setattr(
+        provider,
+        "_client",
+        SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions())),
+    )
+    config = AgentExecutor("sales-research-agent").config
+
+    result = await provider.chat(
+        ProviderRequest(
+            messages=[{"role": "system", "content": "system"}, {"role": "user", "content": "research Acme"}],
+            tools=config.tools,
+            config=config,
+        )
+    )
+
+    assert result.output == "Live account brief"
+    assert result.requested_tool_calls[0].arguments == {"query": "Acme funding"}
+    assert result.tokens_used == 29
+    assert result.cost_cents > 0
+
+
+@pytest.mark.asyncio
+async def test_production_anthropic_provider_normalizes_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeMessages:
+        async def create(self, **_: object) -> object:
+            return SimpleNamespace(
+                content=[
+                    SimpleNamespace(type="text", text="Live support answer"),
+                    SimpleNamespace(type="tool_use", name="create_ticket", input={"priority": "high"}),
+                ],
+                usage=SimpleNamespace(input_tokens=18, output_tokens=6),
+            )
+
+    monkeypatch.setenv("RUNTIME_MODE", "production")
+    provider = get_provider("anthropic")
+    monkeypatch.setattr(provider, "_client", SimpleNamespace(messages=FakeMessages()))
+    config = AgentExecutor("customer-support-agent").config
+
+    result = await provider.chat(
+        ProviderRequest(
+            messages=[{"role": "system", "content": "system"}, {"role": "user", "content": "urgent issue"}],
+            tools=config.tools,
+            config=config,
+        )
+    )
+
+    assert result.output == "Live support answer"
+    assert result.requested_tool_calls[0].name == "create_ticket"
+    assert result.requested_tool_calls[0].arguments == {"priority": "high"}
+    assert result.tokens_used == 24
 
 
 @pytest.mark.asyncio
