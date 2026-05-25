@@ -10,7 +10,7 @@ flowchart LR
   PR --> Evals["Accuracy, safety, latency eval gates"]
   Evals --> Runtime["FastAPI agent runtime"]
   Runtime --> Providers["OpenAI / Anthropic adapters"]
-  Runtime --> Tools["Mock tool registry"]
+  Runtime --> Tools["Tool backends: mock / HTTP / MCP"]
   Runtime --> Metrics["Prometheus metrics"]
   Runtime --> Traces["Trace + eval store"]
   Evals --> Report["PR scorecard"]
@@ -19,7 +19,7 @@ flowchart LR
   Staging --> Prod["Production promotion"]
 ```
 
-## Quick Start
+## Demo Quick Start
 
 ```bash
 python3.12 -m venv .venv
@@ -29,6 +29,8 @@ python scripts/validate_agents.py
 pytest agents/*/tests/unit/ -v --cov=src --cov-report=term-missing
 uvicorn src.runtime.server:app --host 0.0.0.0 --port 8000
 ```
+
+This path uses `RUNTIME_MODE=demo`, deterministic providers, mock tools, and in-memory observability. It is meant for CI, onboarding, and offline development. For live users, follow [docs/PRODUCTION_SETUP.md](docs/PRODUCTION_SETUP.md).
 
 Invoke the sample support agent:
 
@@ -77,7 +79,7 @@ The runtime is explicit about live-user readiness:
 - `RUNTIME_MODE=demo`: deterministic local mode for CI, onboarding, and offline development.
 - `RUNTIME_MODE=production`: live-user mode. Startup fails if provider credentials or persistence settings are missing.
 
-Production mode currently requires `DATABASE_URL`, `REDIS_URL`, API keys for every configured model provider used by agents, and a live tool backend.
+Production mode currently requires `DATABASE_URL`, `REDIS_URL`, API keys for every configured model provider used by agents, `EVAL_JUDGE_MODEL`, and a live tool backend. `python scripts/check_production_config.py` performs the same fail-fast check used by the staging and production workflows.
 
 Tool backends:
 
@@ -108,7 +110,7 @@ Eval suites are JSONL files under `agents/{agent_id}/evals`.
 
 Supported scorers:
 
-- `llm_judge`: deterministic concept-coverage stand-in for an LLM judge.
+- `llm_judge`: live OpenAI/Anthropic judge in production, deterministic concept-coverage judge in demo/CI.
 - `exact`: normalized exact match.
 - `contains`: required keyword coverage.
 - `safety`: PII, prompt-injection, and blocked-content checks.
@@ -140,9 +142,9 @@ python -m src.evals.cli list-suites --agent customer-support
 
 `.github/workflows/pr-review.yml` validates agent schemas, lints, type-checks, enforces 90% unit coverage, starts the runtime, runs eval gates for changed agents, posts a PR scorecard, and sets commit status.
 
-`deploy-staging.yml` builds and pushes a runtime image, deploys the Docker Compose stack, runs integration evals, and sends an optional Slack notification.
+`deploy-staging.yml` checks required production secrets, builds and pushes a runtime image, deploys the Docker Compose stack with `RUNTIME_MODE=production`, runs integration evals, sends an optional Slack notification, and dispatches production when `AUTO_PROMOTE_PROD=true`.
 
-`deploy-prod.yml` pulls a staging-validated image, deploys production, runs smoke tests, records a baseline eval, and tags the release.
+`deploy-prod.yml` runs in the `production` environment, checks production secrets, pulls the staging-validated image, initializes PostgreSQL tables, deploys production, runs smoke tests, records a baseline eval, and tags the release.
 
 ## Deployment
 

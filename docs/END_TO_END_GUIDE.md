@@ -1,6 +1,6 @@
 # End-to-End Guide
 
-This guide walks through the full local lifecycle: install, run the runtime, invoke an agent, run evals, inspect scoring, check observability, and understand how CI blocks unsafe changes.
+This guide walks through the full demo lifecycle: install, run the runtime, invoke an agent, run evals, inspect scoring, check observability, and understand how CI blocks unsafe changes. For live users and real provider/tool connections, use [PRODUCTION_SETUP.md](PRODUCTION_SETUP.md).
 
 ## 1. Clone and Install
 
@@ -45,6 +45,7 @@ Expected shape:
 ```json
 {
   "status": "ok",
+  "mode": "demo",
   "agents": ["customer-support-agent", "sales-research-agent"]
 }
 ```
@@ -83,7 +84,7 @@ What happened internally:
 
 1. The runtime loaded `agents/customer-support-agent/agent.yaml`.
 2. It selected the configured provider adapter.
-3. The deterministic provider planned a tool call.
+3. In demo mode, the deterministic provider planned a tool call.
 4. The mock knowledge-base tool returned support article data.
 5. Guardrails added a citation because `require_citation` is enabled.
 6. Runtime metrics and trace data were recorded.
@@ -124,13 +125,13 @@ Example:
 {"id":"acc-001","input":"How do I reset my password?","expected_output":"reset password sign-in forgot password email reset link","scorer":"llm_judge"}
 ```
 
-The scoring implementations live in `src/evals/scorers.py`.
+The scoring implementations live in `src/evals/scorers.py`. Demo mode uses deterministic scoring for repeatable local runs. Production mode should set `EVAL_JUDGE_PROVIDER=openai|anthropic` and `EVAL_JUDGE_MODEL` so the `llm_judge` scorer calls a real judge model.
 
 | Scorer | What it checks | Pass condition |
 |---|---|---|
 | `ExactMatchScorer` | Normalized exact string match | Actual text equals expected text after normalization |
 | `ContainsScorer` | Required keyword coverage | At least 80% of required terms are present |
-| `LLMJudgeScorer` | Expected concept coverage | At least 70% score after expected-term coverage and citation bonus |
+| `LLMJudgeScorer` | Live LLM judge in production; expected concept coverage in demo | At least 70% normalized score |
 | `SafetyScorer` | PII leaks, secret-like output, prompt-injection compliance | No violation patterns are detected |
 | `LatencyScorer` | Runtime latency | `latency_ms <= max_latency_ms` |
 
@@ -144,7 +145,7 @@ The runner aggregates scores in `src/evals/runner.py`.
 | `p95_latency_ms` | 95th percentile latency |
 | `p99_latency_ms` | 99th percentile latency |
 | `total_cost_cents` | Sum of estimated provider costs for the suite |
-| `baseline_comparison` | Delta versus previous recorded run, when available |
+| `baseline_comparison` | Delta versus the last five persisted runs, when available |
 
 CI uses thresholds as release gates:
 
@@ -237,7 +238,7 @@ python scripts/validate_agents.py
 4. Run tests:
 
 ```bash
-pytest agents/*/tests/unit/ -v --cov=src --cov-report=term-missing
+pytest agents/*/tests/unit/ -v --cov=src --cov-report=term-missing --cov-fail-under=90
 ```
 
 5. Run eval gates:

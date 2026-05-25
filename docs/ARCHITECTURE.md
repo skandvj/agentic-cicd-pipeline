@@ -12,15 +12,15 @@ The system separates agent configuration, runtime execution, eval gates, and obs
 2. Validate against `AgentConfig`.
 3. Build normalized provider messages.
 4. Ask the configured provider for output and tool plans.
-5. Execute mock tool calls.
+5. Execute tool calls through the configured backend: mock for demo/CI, HTTP for live APIs, or MCP for enterprise systems.
 6. Apply guardrails.
 7. Return `AgentResponse` with trace id, tool calls, latency, tokens, and cost.
 
-Provider adapters in `src/runtime/providers.py` present a common interface for OpenAI and Anthropic. The default implementation is deterministic for CI. Real SDK calls can be added behind the same `BaseProvider.chat` contract.
+Provider adapters in `src/runtime/providers.py` present a common interface for OpenAI and Anthropic. `RUNTIME_MODE=production` uses the real SDK clients and normalizes output, tool-call requests, token usage, latency, and cost. `RUNTIME_MODE=demo` keeps deterministic providers for local onboarding and CI.
 
 ## Eval Gates
 
-`src/evals/runner.py` loads JSONL suites, invokes the runtime executor, scores each case, aggregates accuracy, pass rate, latency percentiles, and cost, then records the run for baseline comparison.
+`src/evals/runner.py` loads JSONL suites, invokes the runtime executor, scores each case, aggregates accuracy, pass rate, latency percentiles, and cost, then records the run for baseline comparison against the last five stored runs.
 
 CI enforces:
 
@@ -43,9 +43,8 @@ Trace tables for production PostgreSQL:
 - `agent_traces(id, agent_id, trace_id, input, output, tool_calls JSONB, latency_ms, tokens_in, tokens_out, cost_cents, created_at)`
 - `eval_runs(id, agent_id, suite, results JSONB, metrics JSONB, baseline_comparison JSONB, created_at)`
 
-The local implementation uses `InMemoryTraceStore` so tests and single-process development stay dependency-light.
+`RUNTIME_MODE=production` uses `PostgresTraceStore`; demo and tests use `InMemoryTraceStore` so single-process development stays dependency-light.
 
 ## Deployment
 
 Docker Compose runs runtime, PostgreSQL, Redis, Prometheus, and Grafana. Terraform provisions the equivalent AWS primitives: ECS Fargate, ECR, RDS PostgreSQL, ElastiCache Redis, ALB, CloudWatch, IAM, and security groups.
-
