@@ -1,0 +1,17 @@
+.env
+.venv
+.coverage
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.docker-cli
+coverage
+htmlcov
+__pycache__
+*.pyc
+*.sqlite
+*.db
+docker-compose.yml
+infra/terraform/.terraform
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*

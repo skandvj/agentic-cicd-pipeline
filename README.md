@@ -150,6 +150,8 @@ python -m src.evals.cli list-suites --agent customer-support
 
 Docker Compose is ready for local or small-team staging. Terraform in `infra/terraform` provisions AWS ECS Fargate, ECR, RDS PostgreSQL, ElastiCache Redis, ALB, CloudWatch logs, IAM roles, and security groups.
 
+For a Vercel-hosted public control center and FastAPI function deployment, see [docs/VERCEL_DEPLOYMENT.md](docs/VERCEL_DEPLOYMENT.md). The browser wizard in `public/` is built for recruiters, engineering leaders, and non-technical reviewers who need a guided live walkthrough.
+
 ```bash
 cd infra/terraform
 terraform init
