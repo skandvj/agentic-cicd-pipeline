@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from starlette.responses import Response
 
@@ -31,6 +31,7 @@ async def lifespan(app_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Agentic CI/CD Runtime", version="0.1.0", lifespan=lifespan)
 app.include_router(traces_router)
 _EXECUTOR_CACHE: dict[str, AgentExecutor] = {}
+PUBLIC_DIR = REPO_ROOT / "public"
 
 
 def agent_root() -> Path:
@@ -41,6 +42,28 @@ def available_agent_ids() -> list[str]:
     if not agent_root().exists():
         return []
     return sorted(path.name for path in agent_root().iterdir() if (path / "agent.yaml").exists())
+
+
+@app.get("/", include_in_schema=False)
+async def public_index() -> FileResponse:
+    return _public_file("index.html")
+
+
+@app.get("/styles.css", include_in_schema=False)
+async def public_styles() -> FileResponse:
+    return _public_file("styles.css")
+
+
+@app.get("/app.js", include_in_schema=False)
+async def public_script() -> FileResponse:
+    return _public_file("app.js")
+
+
+def _public_file(name: str) -> FileResponse:
+    path = PUBLIC_DIR / name
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"public asset '{name}' not found")
+    return FileResponse(path)
 
 
 def get_executor(agent_id: str) -> AgentExecutor:

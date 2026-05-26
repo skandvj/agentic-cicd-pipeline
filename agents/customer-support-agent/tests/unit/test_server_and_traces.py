@@ -15,6 +15,12 @@ from src.runtime.settings import ProductionConfigurationError, RuntimeSettings, 
 def test_api_lists_agents_and_invokes_agent() -> None:
     client = TestClient(app)
 
+    homepage = client.get("/")
+    assert homepage.status_code == 200
+    assert "Agentic CI/CD" in homepage.text
+    assert client.get("/styles.css").status_code == 200
+    assert client.get("/app.js").status_code == 200
+
     health = client.get("/health")
     assert health.status_code == 200
     assert health.json()["mode"] == "demo"
