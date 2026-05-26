@@ -1,10 +1,5 @@
 {
   "version": 2,
-  "functions": {
-    "api/index.py": {
-      "maxDuration": 60
-    }
-  },
   "rewrites": [
     { "source": "/health", "destination": "/api/index.py" },
     { "source": "/metrics", "destination": "/api/index.py" },
