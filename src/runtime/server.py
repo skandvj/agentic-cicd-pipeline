@@ -31,7 +31,17 @@ async def lifespan(app_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Agentic CI/CD Runtime", version="0.1.0", lifespan=lifespan)
 app.include_router(traces_router)
 _EXECUTOR_CACHE: dict[str, AgentExecutor] = {}
-PUBLIC_DIRS = [REPO_ROOT / "public", REPO_ROOT / "api" / "public"]
+_SERVER_FILE = Path(__file__).resolve()
+_PUBLIC_BASES = [
+    REPO_ROOT,
+    Path.cwd(),
+    *_SERVER_FILE.parents[:4],
+]
+PUBLIC_DIRS = [
+    directory
+    for base in _PUBLIC_BASES
+    for directory in (base / "public", base / "api" / "public")
+]
 
 
 def agent_root() -> Path:
