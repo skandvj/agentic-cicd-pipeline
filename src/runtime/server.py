@@ -17,6 +17,7 @@ from src.dashboard.traces import router as traces_router
 from src.dashboard.traces import trace_store
 from src.runtime.agent_executor import REPO_ROOT, AgentExecutor, GuardrailViolation
 from src.runtime.models import AgentResponse, InvokeRequest
+from src.runtime.public_assets import PUBLIC_ASSETS
 from src.runtime.settings import load_settings, validate_production_settings
 
 SETTINGS = load_settings()
@@ -42,6 +43,11 @@ PUBLIC_DIRS = [
     for base in _PUBLIC_BASES
     for directory in (base / "public", base / "api" / "public")
 ]
+PUBLIC_MEDIA_TYPES = {
+    "index.html": "text/html; charset=utf-8",
+    "styles.css": "text/css; charset=utf-8",
+    "app.js": "application/javascript; charset=utf-8",
+}
 
 
 def agent_root() -> Path:
@@ -55,25 +61,27 @@ def available_agent_ids() -> list[str]:
 
 
 @app.get("/", include_in_schema=False)
-async def public_index() -> FileResponse:
+async def public_index() -> Response:
     return _public_file("index.html")
 
 
 @app.get("/styles.css", include_in_schema=False)
-async def public_styles() -> FileResponse:
+async def public_styles() -> Response:
     return _public_file("styles.css")
 
 
 @app.get("/app.js", include_in_schema=False)
-async def public_script() -> FileResponse:
+async def public_script() -> Response:
     return _public_file("app.js")
 
 
-def _public_file(name: str) -> FileResponse:
+def _public_file(name: str) -> Response:
     for directory in PUBLIC_DIRS:
         path = directory / name
         if path.exists():
             return FileResponse(path)
+    if name in PUBLIC_ASSETS:
+        return Response(PUBLIC_ASSETS[name], media_type=PUBLIC_MEDIA_TYPES[name])
     raise HTTPException(status_code=404, detail=f"public asset '{name}' not found")
 
 
