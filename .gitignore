@@ -9,3 +9,4 @@ htmlcov/
 .docker-cli/
 *.pyc
 pgdata*/
+.vercel

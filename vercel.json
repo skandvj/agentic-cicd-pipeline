@@ -1,17 +1,17 @@
 {
   "version": 2,
   "functions": {
-    "app.py": {
+    "api/index.py": {
       "maxDuration": 60
     }
   },
   "rewrites": [
-    { "source": "/health", "destination": "/app.py" },
-    { "source": "/metrics", "destination": "/app.py" },
-    { "source": "/docs", "destination": "/app.py" },
-    { "source": "/openapi.json", "destination": "/app.py" },
-    { "source": "/v1/(.*)", "destination": "/app.py" },
-    { "source": "/api/(.*)", "destination": "/app.py" }
+    { "source": "/health", "destination": "/api/index.py" },
+    { "source": "/metrics", "destination": "/api/index.py" },
+    { "source": "/docs", "destination": "/api/index.py" },
+    { "source": "/openapi.json", "destination": "/api/index.py" },
+    { "source": "/v1/(.*)", "destination": "/api/index.py" },
+    { "source": "/api/(.*)", "destination": "/api/index.py" }
   ],
   "headers": [
     {

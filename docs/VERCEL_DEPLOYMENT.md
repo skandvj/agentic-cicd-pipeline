@@ -1,8 +1,8 @@
 # Vercel Deployment
 
-Vercel supports FastAPI deployments by exporting a `FastAPI` instance from an entrypoint such as `app.py`, and serves static assets from `public/**`. This repo includes both:
+Vercel supports FastAPI deployments by exporting a `FastAPI` instance from a Python function under `api/**`, and serves static assets from `public/**`. This repo includes both:
 
-- `app.py`: imports the production runtime from `src.runtime.server`.
+- `api/index.py`: imports the production runtime from `src.runtime.server`.
 - `public/`: recruiter-friendly control center and guided wizard.
 - `vercel.json`: routes `/health`, `/v1/**`, `/api/**`, `/metrics`, and `/docs` to the FastAPI function.
 
