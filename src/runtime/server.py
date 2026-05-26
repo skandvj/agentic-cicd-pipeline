@@ -31,7 +31,7 @@ async def lifespan(app_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Agentic CI/CD Runtime", version="0.1.0", lifespan=lifespan)
 app.include_router(traces_router)
 _EXECUTOR_CACHE: dict[str, AgentExecutor] = {}
-PUBLIC_DIR = REPO_ROOT / "public"
+PUBLIC_DIRS = [REPO_ROOT / "public", REPO_ROOT / "api" / "public"]
 
 
 def agent_root() -> Path:
@@ -60,10 +60,11 @@ async def public_script() -> FileResponse:
 
 
 def _public_file(name: str) -> FileResponse:
-    path = PUBLIC_DIR / name
-    if not path.exists():
-        raise HTTPException(status_code=404, detail=f"public asset '{name}' not found")
-    return FileResponse(path)
+    for directory in PUBLIC_DIRS:
+        path = directory / name
+        if path.exists():
+            return FileResponse(path)
+    raise HTTPException(status_code=404, detail=f"public asset '{name}' not found")
 
 
 def get_executor(agent_id: str) -> AgentExecutor:
